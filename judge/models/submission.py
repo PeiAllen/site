@@ -113,8 +113,8 @@ class Submission(models.Model):
     def long_status(self):
         return Submission.USER_DISPLAY_CODES.get(self.short_status, '')
 
-    def judge(self, rejudge=False, batch_rejudge=False):
-        judge_submission(self, rejudge, batch_rejudge)
+    def judge(self, *args, **kwargs):
+        judge_submission(self, *args, **kwargs)
 
     judge.alters_data = True
 
@@ -122,6 +122,22 @@ class Submission(models.Model):
         abort_submission(self)
 
     abort.alters_data = True
+
+    def can_see_detail(self, user):
+        profile = user.profile
+        if not user.is_authenticated:
+            return False
+        if user.has_perm('judge.view_all_submission'):
+            return True
+        if self.user_id == profile.id:
+            return True
+        if self.problem.is_editor(profile):
+            return True
+        if (self.problem.is_public or self.problem.testers.filter(id=profile.id).exists()) and \
+                self.problem.submission_set.filter(user_id=profile.id, result='AC',
+                                                   points=self.problem.points).exists():
+            return True
+        return False
 
     def update_contest(self):
         try:

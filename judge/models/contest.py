@@ -252,21 +252,24 @@ class Contest(models.Model):
 
             in_org = self.organizations.filter(id__in=user.profile.organizations.all()).exists()
             in_users = self.private_contestants.filter(id=user.profile.id).exists()
+        else:
+            in_org = False
+            in_users = False
 
-            if not self.is_private and self.is_organization_private:
-                if in_org:
-                    return
-                raise self.PrivateContest()
+        if not self.is_private and self.is_organization_private:
+            if in_org:
+                return
+            raise self.PrivateContest()
 
-            if self.is_private and not self.is_organization_private:
-                if in_users:
-                    return
-                raise self.PrivateContest()
+        if self.is_private and not self.is_organization_private:
+            if in_users:
+                return
+            raise self.PrivateContest()
 
-            if self.is_private and self.is_organization_private:
-                if in_org and in_users:
-                    return
-                raise self.PrivateContest()
+        if self.is_private and self.is_organization_private:
+            if in_org and in_users:
+                return
+            raise self.PrivateContest()
 
     def is_accessible_by(self, user):
         try:
@@ -290,23 +293,23 @@ class Contest(models.Model):
 
     @classmethod
     def get_visible_contests(cls, user):
+        if not user.is_authenticated:
+            return cls.objects.filter(is_visible=True, is_organization_private=False, is_private=False) \
+                              .defer('description').distinct()
+
         queryset = cls.objects.defer('description')
-        if not user.has_perm('judge.see_private_contest'):
+        if not (user.has_perm('judge.see_private_contest') or user.has_perm('judge.edit_all_contest')):
             q = Q(is_visible=True)
-            if user.is_authenticated:
-                q |= Q(organizers=user.profile)
-            queryset = queryset.filter(q)
-        if not user.has_perm('judge.edit_all_contest'):
-            q = Q(is_private=False, is_organization_private=False)
-            if user.is_authenticated:
-                q |= Q(organizers=user.profile)
-                q |= Q(is_organization_private=False, is_private=True, private_contestants=user.profile)
-                q |= Q(is_organization_private=True, is_private=False,
-                       organizations__in=user.profile.organizations.all())
-                q |= Q(is_organization_private=True, is_private=True,
-                       organizations__in=user.profile.organizations.all(),
-                       private_contestants=user.profile)
-                q |= Q(view_contest_scoreboard=user.profile)
+            q &= (
+                Q(view_contest_scoreboard=user.profile) |
+                Q(is_organization_private=False, is_private=False) |
+                Q(is_organization_private=False, is_private=True, private_contestants=user.profile) |
+                Q(is_organization_private=True, is_private=False, organizations__in=user.profile.organizations.all()) |
+                Q(is_organization_private=True, is_private=True, organizations__in=user.profile.organizations.all(),
+                  private_contestants=user.profile)
+            )
+
+            q |= Q(organizers=user.profile)
             queryset = queryset.filter(q)
         return queryset.distinct()
 
@@ -343,6 +346,7 @@ class ContestParticipation(models.Model):
     cumtime = models.PositiveIntegerField(verbose_name=_('cumulative time'), default=0)
     is_disqualified = models.BooleanField(verbose_name=_('is disqualified'), default=False,
                                           help_text=_('Whether this participation is disqualified.'))
+    tiebreaker = models.FloatField(verbose_name=_('tie-breaking field'), default=0.0)
     virtual = models.IntegerField(verbose_name=_('virtual participation id'), default=LIVE,
                                   help_text=_('0 means non-virtual, otherwise the n-th virtual participation.'))
     format_data = JSONField(verbose_name=_('contest format specific data'), null=True, blank=True)

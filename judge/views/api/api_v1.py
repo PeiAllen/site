@@ -32,6 +32,9 @@ def api_v1_contest_list(request):
 def api_v1_contest_detail(request, contest):
     contest = get_object_or_404(Contest, key=contest)
 
+    if not contest.is_accessible_by(request.user):
+        raise Http404()
+
     in_contest = contest.is_in_contest(request.user)
     can_see_rankings = contest.can_see_scoreboard(request.user)
     if contest.hide_scoreboard and in_contest:
@@ -49,7 +52,7 @@ def api_v1_contest_detail(request, contest):
                       .annotate(old_rating=Subquery(old_ratings_subquery.values('rating')[:1]))
                       .prefetch_related('user__organizations')
                       .annotate(username=F('user__user__username'))
-                      .order_by('-score', 'cumtime') if can_see_rankings else [])
+                      .order_by('-score', 'cumtime', 'tiebreaker') if can_see_rankings else [])
     can_see_problems = (in_contest or contest.ended or contest.is_editable_by(request.user))
 
     return JsonResponse({
@@ -78,6 +81,7 @@ def api_v1_contest_detail(request, contest):
                 'user': participation.username,
                 'points': participation.score,
                 'cumtime': participation.cumtime,
+                'tiebreaker': participation.tiebreaker,
                 'old_rating': participation.old_rating,
                 'new_rating': participation.new_rating,
                 'is_disqualified': participation.is_disqualified,
@@ -87,7 +91,7 @@ def api_v1_contest_detail(request, contest):
 
 
 def api_v1_problem_list(request):
-    queryset = Problem.objects.filter(is_public=True, is_organization_private=False)
+    queryset = Problem.get_visible_problems(request.user)
     if settings.ENABLE_FTS and 'search' in request.GET:
         query = ' '.join(request.GET.getlist('search')).strip()
         if query:
@@ -104,7 +108,7 @@ def api_v1_problem_list(request):
 
 def api_v1_problem_info(request, problem):
     p = get_object_or_404(Problem, code=problem)
-    if not p.is_accessible_by(request.user):
+    if not p.is_accessible_by(request.user, skip_contest_problem_check=True):
         raise Http404()
 
     return JsonResponse({

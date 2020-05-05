@@ -1,14 +1,15 @@
 import itertools
 import json
 from datetime import datetime
-from operator import itemgetter
+from operator import attrgetter, itemgetter
 
 from django.conf import settings
 from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import Permission
-from django.contrib.auth.views import redirect_to_login
+from django.contrib.auth.views import LoginView, redirect_to_login
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Count, Max, Min
 from django.http import Http404, HttpResponseRedirect, JsonResponse
@@ -19,14 +20,16 @@ from django.utils.formats import date_format
 from django.utils.functional import cached_property
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _, gettext_lazy
+from django.views.decorators.http import require_POST
 from django.views.generic import DetailView, ListView, TemplateView
 from reversion import revisions
 
-from judge.forms import ProfileForm, newsletter_id
+from judge.forms import CustomAuthenticationForm, ProfileForm, newsletter_id
 from judge.models import Profile, Rating, Submission
 from judge.performance_points import get_pp_breakdown
 from judge.ratings import rating_class, rating_progress
 from judge.utils.problems import contest_completed_ids, user_completed_ids
+from judge.utils.pwned import PwnedPasswordsValidator
 from judge.utils.ranker import ranker
 from judge.utils.subscription import Subscription
 from judge.utils.unicode import utf8text
@@ -114,6 +117,23 @@ class UserPage(TitleMixin, UserMixin, DetailView):
     def get(self, request, *args, **kwargs):
         self.hide_solved = request.GET.get('hide_solved') == '1' if 'hide_solved' in request.GET else False
         return super(UserPage, self).get(request, *args, **kwargs)
+
+
+class CustomLoginView(LoginView):
+    template_name = 'registration/login.html'
+    extra_context = {'title': _('Login')}
+    authentication_form = CustomAuthenticationForm
+    redirect_authenticated_user = True
+
+    def form_valid(self, form):
+        password = form.cleaned_data['password']
+        validator = PwnedPasswordsValidator()
+        try:
+            validator.validate(password)
+            self.request.session['password_pwned'] = False
+        except ValidationError:
+            self.request.session['password_pwned'] = True
+        return super().form_valid(form)
 
 
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -209,11 +229,10 @@ class UserPerformancePointsAjax(UserProblemsPage):
 
 @login_required
 def edit_profile(request):
-    profile = Profile.objects.get(user=request.user)
-    if profile.mute:
+    if request.profile.mute:
         raise Http404()
     if request.method == 'POST':
-        form = ProfileForm(request.POST, instance=profile, user=request.user)
+        form = ProfileForm(request.POST, instance=request.profile, user=request.user)
         if form.is_valid():
             with transaction.atomic(), revisions.create_revision():
                 form.save()
@@ -238,7 +257,7 @@ def edit_profile(request):
 
             return HttpResponseRedirect(request.path)
     else:
-        form = ProfileForm(instance=profile, user=request.user)
+        form = ProfileForm(instance=request.profile, user=request.user)
         if newsletter_id is not None:
             try:
                 subscription = Subscription.objects.get(user=request.user, newsletter_id=newsletter_id)
@@ -251,11 +270,33 @@ def edit_profile(request):
     tzmap = settings.TIMEZONE_MAP
     return render(request, 'user/edit-profile.html', {
         'require_staff_2fa': settings.DMOJ_REQUIRE_STAFF_2FA,
-        'form': form, 'title': _('Edit profile'), 'profile': profile,
+        'form': form, 'title': _('Edit profile'), 'profile': request.profile,
         'has_math_config': bool(settings.MATHOID_URL),
         'TIMEZONE_MAP': tzmap or 'http://momentjs.com/static/img/world.png',
         'TIMEZONE_BG': settings.TIMEZONE_BG if tzmap else '#4E7CAD',
     })
+
+
+@require_POST
+@login_required
+def generate_api_token(request):
+    profile = request.profile
+    with transaction.atomic(), revisions.create_revision():
+        revisions.set_user(request.user)
+        revisions.set_comment(_('Generated API token for user'))
+        return JsonResponse({'data': {'token': profile.generate_api_token()}})
+
+
+@require_POST
+@login_required
+def remove_api_token(request):
+    profile = request.profile
+    with transaction.atomic(), revisions.create_revision():
+        profile.api_token = None
+        profile.save()
+        revisions.set_user(request.user)
+        revisions.set_comment(_('Removed API token for user'))
+    return JsonResponse({})
 
 
 class UserList(QueryStringSortMixin, DiggPaginatorMixin, TitleMixin, ListView):
@@ -275,7 +316,11 @@ class UserList(QueryStringSortMixin, DiggPaginatorMixin, TitleMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super(UserList, self).get_context_data(**kwargs)
-        context['users'] = ranker(context['users'], rank=self.paginate_by * (context['page_obj'].number - 1))
+        context['users'] = ranker(
+            context['users'],
+            key=attrgetter('performance_points', 'problem_count'),
+            rank=self.paginate_by * (context['page_obj'].number - 1),
+        )
         context['first_page_href'] = '.'
         context.update(self.get_sort_context())
         context.update(self.get_sort_paginate_context())

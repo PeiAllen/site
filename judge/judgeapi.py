@@ -48,7 +48,7 @@ def judge_request(packet, reply=True):
         return result
 
 
-def judge_submission(submission, rejudge, batch_rejudge=False):
+def judge_submission(submission, rejudge=False, batch_rejudge=False, judge_id=None):
     from .models import ContestSubmission, Submission, SubmissionTestCase
 
     CONTEST_SUBMISSION_PRIORITY = 0
@@ -88,6 +88,7 @@ def judge_submission(submission, rejudge, batch_rejudge=False):
             'problem-id': submission.problem.code,
             'language': submission.language.key,
             'source': submission.source.source,
+            'judge-id': judge_id,
             'priority': BATCH_REJUDGE_PRIORITY if batch_rejudge else REJUDGE_PRIORITY if rejudge else priority,
         })
     except BaseException:
@@ -109,7 +110,7 @@ def disconnect_judge(judge, force=False):
 def abort_submission(submission):
     from .models import Submission
     response = judge_request({'name': 'terminate-submission', 'submission-id': submission.id})
-    # This defaults to true, so that in the case the judgelist fails to remove the submission from the queue,
+    # This defaults to true, so that in the case the JudgeList fails to remove the submission from the queue,
     # and returns a bad-request, the submission is not falsely shown as "Aborted" when it will still be judged.
     if not response.get('judge-aborted', True):
         Submission.objects.filter(id=submission.id).update(status='AB', result='AB')
