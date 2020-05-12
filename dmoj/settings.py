@@ -2,10 +2,10 @@
 Django settings for dmoj project.
 
 For more information on this file, see
-https://docs.djangoproject.com/en/1.11/topics/settings/
+https://docs.djangoproject.com/en/2.2/topics/settings/
 
 For the full list of settings and their values, see
-https://docs.djangoproject.com/en/1.11/ref/settings/
+https://docs.djangoproject.com/en/2.2/ref/settings/
 """
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
@@ -19,7 +19,7 @@ from jinja2 import select_autoescape
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 
 # Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/1.11/howto/deployment/checklist/
+# See https://docs.djangoproject.com/en/2.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = '5*9f5q57mqmlz2#f$x1h76&jxy#yortjl1v+l*6hd18$d*yx#0'
@@ -62,6 +62,7 @@ DMOJ_PROBLEM_MAX_TIME_LIMIT = 60  # seconds
 DMOJ_PROBLEM_MIN_MEMORY_LIMIT = 0  # kilobytes
 DMOJ_PROBLEM_MAX_MEMORY_LIMIT = 1048576  # kilobytes
 DMOJ_PROBLEM_MIN_PROBLEM_POINTS = 0
+DMOJ_PROBLEM_HOT_PROBLEM_COUNT = 7
 DMOJ_RATING_COLORS = True
 DMOJ_EMAIL_THROTTLING = (10, 60)
 DMOJ_STATS_LANGUAGE_THRESHOLD = 10
@@ -425,7 +426,7 @@ MARTOR_UPLOAD_MEDIA_DIR = 'martor'
 MARTOR_UPLOAD_SAFE_EXTS = {'.jpg', '.png', '.gif'}
 
 # Database
-# https://docs.djangoproject.com/en/1.11/ref/settings/#databases
+# https://docs.djangoproject.com/en/2.2/ref/settings/#databases
 
 DATABASES = {
     'default': {
@@ -452,7 +453,7 @@ EVENT_DAEMON_AMQP_EXCHANGE = 'dmoj-events'
 EVENT_DAEMON_SUBMISSION_KEY = '6Sdmkx^%pk@GsifDfXcwX*Y7LRF%RGT8vmFpSxFBT$fwS7trc8raWfN#CSfQuKApx&$B#Gh2L7p%W!Ww'
 
 # Internationalization
-# https://docs.djangoproject.com/en/1.11/topics/i18n/
+# https://docs.djangoproject.com/en/2.2/topics/i18n/
 
 # Whatever you do, this better be one of the entries in `LANGUAGES`.
 LANGUAGE_CODE = 'en'
@@ -466,7 +467,7 @@ USE_TZ = True
 SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
 
 # Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/1.11/howto/static-files/
+# https://docs.djangoproject.com/en/2.2/howto/static-files/
 
 DMOJ_RESOURCES = os.path.join(BASE_DIR, 'resources')
 STATICFILES_FINDERS = (
@@ -515,6 +516,8 @@ JUDGE_AMQP_PATH = None
 MOSS_API_KEY = None
 
 CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+
+WEBAUTHN_RP_ID = None
 
 try:
     with open(os.path.join(os.path.dirname(__file__), 'local_settings.py')) as f:

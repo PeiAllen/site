@@ -419,7 +419,7 @@ class ProblemList(QueryStringSortMixin, TitleMixin, SolvedProblemMixin, ListView
         context.update(self.get_sort_paginate_context())
         if not self.in_contest:
             context.update(self.get_sort_context())
-            context['hot_problems'] = hot_problems(timedelta(days=1), 7)
+            context['hot_problems'] = hot_problems(timedelta(days=1), settings.DMOJ_PROBLEM_HOT_PROBLEM_COUNT)
             context['point_start'], context['point_end'], context['point_values'] = self.get_noui_slider_points()
         else:
             context['hot_problems'] = None
@@ -535,8 +535,14 @@ class ProblemSubmit(LoginRequiredMixin, ProblemMixin, TitleMixin, SingleObjectFo
         max_subs = self.contest_problem and self.contest_problem.max_submissions
         if max_subs is None:
             return None
-        return max_subs - get_contest_submission_count(
-            self.object, self.request.profile, self.request.profile.current_contest.virtual,
+        # When an IE submission is rejudged into a non-IE status, it will count towards the
+        # submission limit. We max with 0 to ensure that `remaining_submission_count` returns
+        # a non-negative integer, which is required for future checks in this view.
+        return max(
+            0,
+            max_subs - get_contest_submission_count(
+                self.object, self.request.profile, self.request.profile.current_contest.virtual,
+            ),
         )
 
     @cached_property
@@ -596,6 +602,12 @@ class ProblemSubmit(LoginRequiredMixin, ProblemMixin, TitleMixin, SingleObjectFo
         return reverse('submission_status', args=(self.new_submission.id,))
 
     def form_valid(self, form):
+        if (
+            not self.request.user.has_perm('judge.spam_submission') and
+            Submission.objects.filter(user=self.request.profile, was_rejudged=False)
+                              .exclude(status__in=['D', 'IE', 'CE', 'AB']).count() >= settings.DMOJ_SUBMISSION_LIMIT
+        ):
+            return HttpResponse('<h1>You submitted too many submissions.</h1>', status=429)
         if not self.object.allowed_languages.filter(id=form.cleaned_data['language'].id).exists():
             raise PermissionDenied()
         if not self.request.user.is_superuser and self.object.banned_users.filter(id=self.request.profile.id).exists():
